@@ -176,7 +176,8 @@ function renderHome() {
         'Twelve translations, 877,377 scholarly cross-references and Nave\'s ' +
         'topical index, fused into one search. It finds the verse you meant ' +
         'even when it shares no words with what you typed.'),
-      el('div', { class: 'suggestions' }, chips),
+      el('div', { class: 'suggestions' }, chips,
+        el('a', { class: 'chip chip-alt', href: '#/books' }, 'Browse all 66 books →')),
       el('p', { class: 'hero-note' },
         'Runs entirely in your browser. No account, no server, no AI — the ' +
         'text is the text.')),
@@ -315,11 +316,14 @@ async function renderReader(bookId, chapter, verse) {
         el('p', {}, `${plural(verses.length, 'verse', 'verses')} · ` +
           `${translationName(state.translation)}`),
         el('p', {}, 'Select any verse for its cross-references, subjects and ' +
-          'every translation side by side.'))));
+          'every translation side by side.'))),
+    book.chapters.length > 1 ? chapterGrid(book, chapter) : null);
 
   view.replaceChildren(el('div', { class: 'wrap' },
     el('div', { class: 'reader-head' },
-      el('h2', {}, title),
+      el('div', {},
+        el('a', { class: 'crumb', href: '#/books' }, 'Contents'),
+        el('h2', {}, title)),
       el('div', { class: 'reader-nav' },
         el('a', { class: 'btn', href: prev || '#', 'aria-disabled': !prev }, '← Previous'),
         el('a', { class: 'btn', href: next || '#', 'aria-disabled': !next }, 'Next →'))),
@@ -412,6 +416,50 @@ async function openVerse(index, { scroll = true } = {}) {
   if (scroll && window.matchMedia('(max-width: 900px)').matches) {
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+}
+
+// ---------- contents ----------
+
+const DIVISIONS = [
+  'Pentateuch', 'Historical', 'Poetry-Wisdom', 'Major Prophets',
+  'Minor Prophets', 'Gospels', 'Acts', 'Pauline Epistles',
+  'General Epistles', 'Revelation',
+];
+
+function renderBooks() {
+  document.title = 'Contents — Concord';
+  const grouped = new Map(DIVISIONS.map((d) => [d, []]));
+  for (const b of state.meta.books) {
+    if (!grouped.has(b.div)) grouped.set(b.div, []);
+    grouped.get(b.div).push(b);
+  }
+
+  const sections = [...grouped.entries()]
+    .filter(([, list]) => list.length)
+    .map(([division, list]) => el('section', { class: 'division' },
+      el('h3', {}, division),
+      el('div', { class: 'book-grid' },
+        list.map((b) => el('a', {
+          class: 'book-link', href: `#/read/${b.id}/1`,
+        },
+          el('span', {}, b.name),
+          el('em', {}, `${b.chapters.length} ch`))))));
+
+  view.replaceChildren(el('div', { class: 'wrap' },
+    el('div', { class: 'results-head' },
+      el('h2', {}, 'Contents'),
+      el('span', { class: 'results-count' }, '66 books · 31,102 verses')),
+    el('div', { class: 'divisions' }, sections)));
+}
+
+function chapterGrid(book, current) {
+  return el('div', { class: 'card' },
+    el('h3', {}, 'Chapters'),
+    el('div', { class: 'chapter-grid' },
+      book.chapters.map((_, i) => el('a', {
+        class: 'chapter-link', href: `#/read/${book.id}/${i + 1}`,
+        'aria-current': i + 1 === current ? 'true' : null,
+      }, String(i + 1)))));
 }
 
 // ---------- static pages ----------
@@ -546,6 +594,7 @@ async function route() {
     if (!parts.length) { input.value = ''; clearBtn.hidden = true; renderHome(); return; }
     if (parts[0] === 'q') { await renderSearch(decodeURIComponent(parts.slice(1).join('/'))); return; }
     if (parts[0] === 'read') { await renderReader(parts[1], parts[2], parts[3]); return; }
+    if (parts[0] === 'books') { renderBooks(); return; }
     if (parts[0] === 'about') { renderAbout(); return; }
     if (parts[0] === 'sources') { renderSources(); return; }
     renderHome();
