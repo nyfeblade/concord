@@ -895,7 +895,10 @@ function highlightSpans(text, spans) {
   const alts = [...new Set(spans)]
     .sort((a, b) => b.length - a.length)
     .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const re = new RegExp(`(${alts.join('|')})`, 'g');
+  // Word boundaries matter here. A verse can use both the noun and the verb -
+  // John 15:9 has "hath loved me" (G25) and "in my love" (G26) - and without
+  // them the span for "love" marks the middle of "loved".
+  const re = new RegExp(`\\b(${alts.join('|')})\\b`, 'g');
   return escapeHTML(text).replace(re, (m) => `<mark>${m}</mark>`);
 }
 
