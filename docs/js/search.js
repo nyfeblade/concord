@@ -259,7 +259,12 @@ function peak(arr) {
   return m || 1;
 }
 
-export async function search(query, { limit = 60, book = null } = {}) {
+// How many ranked verses are handed back for the interface to page through.
+// Every match is scored either way; this only bounds what is retained, and
+// nobody is reading past two thousand verses of results.
+const RETAIN = 2000;
+
+export async function search(query, { limit = RETAIN, book = null } = {}) {
   const ctx = await warm();
   const { words, phrases } = tokenize(query);
   if (!words.length) return { results: [], topics: [], terms: [], phrases };

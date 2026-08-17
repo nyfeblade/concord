@@ -217,7 +217,7 @@ async function renderSearch(query) {
     return;
   }
 
-  const res = await engine.search(query, { limit: 80 });
+  const res = await engine.search(query);
   const topicIndex = {};
   for (const t of res.topics) topicIndex[t.tid] = t.topic.n;
   state.lastQuery = query;
@@ -232,18 +232,31 @@ async function renderSearch(query) {
     return;
   }
 
-  const indices = res.results.map((r) => r.verse);
-  const texts = await verseTexts(indices);
-
   // Highlight exactly what the index matched. Stopwords never reach res.terms,
   // so "you" and "who" are not marked.
   const pattern = await highlightPattern(res.terms.map((t) => t.stem));
 
-  const list = el('div', { class: 'verse-list' },
-    res.results.map((r) =>
+  // Results arrive fully ranked but are rendered a page at a time. Verse text
+  // lives in per-book files, so drawing 2,000 results at once would pull down
+  // most of the Bible to fill a list nobody scrolls to the end of.
+  const list = el('div', { class: 'verse-list' });
+  const countEl = el('span', { class: 'results-count' });
+  let shown = 0;
+
+  const renderPage = async () => {
+    const batch = res.results.slice(shown, shown + PAGE_SIZE);
+    if (!batch.length) return false;
+    const texts = await verseTexts(batch.map((r) => r.verse));
+    list.append(...batch.map((r) =>
       verseCard(r.verse, texts.get(r.verse), {
         pattern, result: r, onOpen: (i) => openVerse(i),
       })));
+    shown += batch.length;
+    countEl.replaceChildren(shown < res.total
+      ? `${shown.toLocaleString()} of ${plural(res.total, 'verse', 'verses')}`
+      : plural(res.total, 'verse', 'verses'));
+    return shown < res.results.length;
+  };
 
   const expansions = res.terms.filter((t) => t.origin !== 'query');
   const expansionNote = expansions.length
@@ -270,13 +283,63 @@ async function renderSearch(query) {
       el('p', {}, 'Tags under each verse show which signals fired. A verse ' +
         'with no “wording” tag was found purely by association.'))));
 
+  const more = el('button', {
+    class: 'btn load-more', type: 'button',
+    onclick: () => loadMore(),
+  }, 'Show more verses');
+  const sentinel = el('div', { class: 'sentinel' }, more);
+
+  let loading = false;
+  async function loadMore() {
+    if (loading) return;
+    loading = true;
+    more.disabled = true;
+    more.textContent = 'Loading…';
+    const hasMore = await renderPage();
+    if (hasMore) {
+      more.disabled = false;
+      more.textContent = 'Show more verses';
+    } else {
+      sentinel.replaceChildren(el('p', { class: 'list-end' },
+        res.total > res.results.length
+          ? `End of the first ${res.results.length.toLocaleString()} results. ` +
+            'Add another word to narrow the search.'
+          : 'That is every match.'));
+      stopAutoLoad();
+    }
+    loading = false;
+  }
+
   view.replaceChildren(el('div', { class: 'wrap' },
     el('div', { class: 'results-head' },
-      el('h2', {}, `“${query}”`),
-      el('span', { class: 'results-count' },
-        plural(res.total, 'verse', 'verses'))),
+      el('h2', {}, `“${query}”`), countEl),
     expansionNote,
-    el('div', { class: 'split' }, list, panel)));
+    el('div', { class: 'split' },
+      el('div', {}, list, sentinel),
+      panel)));
+
+  await renderPage();
+
+  // Load the next page as the end of the list comes into view, with the
+  // button as the fallback for anyone who cannot trigger an intersection.
+  startAutoLoad(sentinel, loadMore);
+}
+
+const PAGE_SIZE = 40;
+let autoLoader = null;
+
+function startAutoLoad(sentinel, loadMore) {
+  stopAutoLoad();
+  if (!('IntersectionObserver' in window)) return;
+  autoLoader = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) loadMore();
+  }, { rootMargin: '600px' });
+  autoLoader.observe(sentinel);
+}
+
+function stopAutoLoad() {
+  if (autoLoader) autoLoader.disconnect();
+  autoLoader = null;
 }
 
 async function renderReader(bookId, chapter, verse) {
@@ -588,6 +651,7 @@ function go(hash) {
 async function route() {
   const hash = location.hash || '#/';
   const parts = hash.slice(2).split('/').filter(Boolean);
+  stopAutoLoad();          // the old results list is about to be discarded
   window.scrollTo({ top: 0 });
 
   try {
