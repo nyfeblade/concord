@@ -105,10 +105,14 @@ async function verseTexts(indices, translation = state.translation) {
 
 // ---------- components ----------
 
-function whyTags(r) {
+function whyTags(r, { elsewhere = false } = {}) {
   const tags = [];
   if (r.lexical > 0) {
-    tags.push(el('span', { class: 'tag tag-text' }, 'wording'));
+    // Either the reader's translation shows the match or it does not. Saying
+    // both is just noise.
+    tags.push(elsewhere
+      ? el('span', { class: 'tag' }, 'wording in another translation')
+      : el('span', { class: 'tag tag-text' }, 'wording'));
   }
   if (r.graph > 0.08 && r.via && r.via.length) {
     const label = r.via.length === 1
@@ -138,10 +142,7 @@ function verseCard(index, text, { pattern = null, result = null, onOpen } = {}) 
     body = el('div', { class: 'verse-text verse-missing' },
       `Not translated in ${translationName(state.translation)}`);
   }
-  const tags = result ? whyTags(result) : [];
-  if (elsewhere) {
-    tags.unshift(el('span', { class: 'tag' }, 'wording in another translation'));
-  }
+  const tags = result ? whyTags(result, { elsewhere }) : [];
   return el('button', {
     class: 'verse-card', type: 'button',
     onclick: () => onOpen ? onOpen(index) : go(readerHash(index)),
@@ -626,7 +627,7 @@ window.addEventListener('hashchange', route);
   }
   selectEl.replaceChildren(...state.meta.translations.map((t) =>
     el('option', { value: t.id, selected: t.id === state.translation },
-      `${t.name}${t.partial ? ' (partial)' : ''}`)));
+      `${t.id} · ${t.name}${t.partial ? ' (partial)' : ''}`)));
 
   await route();
   data.warmConceptGraph();

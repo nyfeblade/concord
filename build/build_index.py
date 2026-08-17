@@ -43,7 +43,7 @@ STOPWORDS -= KEEP_ANYWAY
 
 # Translations whose spelling is modern. A word these use is a real word,
 # which is what keeps the orthography pass from rewriting it.
-MODERN_TRANSLATIONS = {"BSB", "NHEB", "WEB_ACV", "WEBSTER", "ASV"}
+MODERN_TRANSLATIONS = {"BSB", "NHEB", "ACV", "WEBSTER", "ASV"}
 
 
 def normal_form(word, freq=None, modern=None):
@@ -115,13 +115,9 @@ def build():
     modern_vocab = Counter()
     for t in TRANSLATIONS:
         is_modern = t["id"] in MODERN_TRANSLATIONS
-        with open(src_file(t), encoding="utf-8") as f:
-            doc = json.load(f)
         # translations are already aligned to the spine by build_text, so read
         # the normalised output rather than the raw source
         tdir = os.path.join(OUT, "text", t["id"])
-        offset = 0
-        book_id = 0
         prev = None
         for i, (bid, ch, v) in enumerate(spine):
             if bid != prev:

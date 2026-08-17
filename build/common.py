@@ -25,8 +25,8 @@ TRANSLATIONS = [
          blurb="The 1901 American revision of the Revised Version."),
     dict(id="NHEB",  name="New Heart English Bible",   year=2010, spine="extra",
          blurb="A modern update in the Tyndale-KJV tradition."),
-    dict(id="WEB_ACV", name="A Conservative Version",  year=2005, spine="full",
-         src="ACV", blurb="A literal modern translation by Walter L. Porter."),
+    dict(id="ACV",   name="A Conservative Version",  year=2005, spine="full",
+         blurb="A literal modern translation by Walter L. Porter."),
     dict(id="YLT",   name="Young's Literal Translation", year=1898, spine="full",
          blurb="Rigidly literal, preserving Hebrew and Greek tense."),
     dict(id="DARBY", name="Darby Bible",               year=1890, spine="full",
@@ -39,18 +39,21 @@ TRANSLATIONS = [
          src="Webster", blurb="Noah Webster's light modernisation of the KJV."),
     dict(id="GEN",   name="Geneva Bible",              year=1599, spine="extra",
          src="Geneva1599", blurb="The study Bible of the Reformation, pre-dating the KJV."),
-    # Deliberately excluded from v1. Both are public domain and both are
-    # downloaded by fetch_sources.sh, but neither uses KJV versification:
-    #   DRC - Vulgate psalm numbering, off by one for most of the Psalter
-    #         (DRC Psalm 23 is KJV Psalm 24), so aligning it by chapter number
-    #         would silently show the wrong psalm.
-    #   JPS - Hebrew superscription offsets shift ~170 verses inside psalms.
-    # Shipping either against the canonical spine would return wrong text, so
-    # they wait until the reader can carry a per-translation versification map.
     dict(id="TYN",   name="Tyndale Bible",             year=1530, spine="full",
          src="Tyndale", partial=True,
          blurb="The first printed English New Testament. Pentateuch, Jonah and NT only."),
 ]
+
+# Not shipped, though fetch_sources.sh downloads both and both are public
+# domain. Neither uses KJV versification:
+#   DRC - Vulgate psalm numbering, one behind the Hebrew for most of the
+#         Psalter, so DRC Psalm 23 is KJV Psalm 24. Aligning it by chapter
+#         number would show the wrong psalm with no visible sign of error.
+#   JPS - counts Hebrew superscriptions as verses, shifting ~170 verses
+#         inside the Psalms.
+# Adding either back means teaching the reader a per-translation
+# versification map first. build_text.py refuses to align them until then.
+WITHHELD = ("DRC", "JPS")
 
 
 def src_file(t):
