@@ -1,6 +1,6 @@
 """Step 1 - normalise every translation onto the canonical verse spine.
 
-Emits one JSON file per translation per book, plus site/data/meta.json.
+Emits one JSON file per translation per book, plus docs/data/meta.json.
 """
 
 import json

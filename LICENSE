@@ -20,5 +20,5 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-The scripture texts and reference datasets distributed under site/data/ are
+The scripture texts and reference datasets distributed under docs/data/ are
 not covered by this licence; see LICENSES.md for their terms.

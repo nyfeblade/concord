@@ -3,7 +3,7 @@ name: Verify data pipeline
 on:
   push:
     branches: [main]
-    paths: ['build/**', 'site/js/**']
+    paths: ['build/**', 'docs/js/**']
   pull_request:
   workflow_dispatch:
 

@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'site');
+const SITE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'docs');
 
 globalThis.window = { requestIdleCallback: null };
 globalThis.requestIdleCallback = (fn) => setTimeout(fn, 0);
@@ -29,9 +29,9 @@ globalThis.fetch = async (url) => {
   }
 };
 
-const data = await import('../site/js/data.js');
-const refs = await import('../site/js/refs.js');
-const search = await import('../site/js/search.js');
+const data = await import('../docs/js/data.js');
+const refs = await import('../docs/js/refs.js');
+const search = await import('../docs/js/search.js');
 
 const meta = await data.meta();
 refs.init(meta);

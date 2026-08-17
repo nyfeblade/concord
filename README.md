@@ -95,7 +95,7 @@ number would silently show the wrong psalm.
 ./build/fetch_sources.sh      # ~150MB from upstream datasets
 python3 build/build_all.py    # ~25s, needs numpy + scipy
 python3 build/verify.py       # 42 integrity checks
-cd site && python3 -m http.server 8787
+cd docs && python3 -m http.server 8787
 ```
 
 `build/test_search.mjs` runs the real browser search engine headlessly, which

@@ -8,7 +8,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(ROOT, "data", "raw")
-OUT = os.path.join(ROOT, "site", "data")
+OUT = os.path.join(ROOT, "docs", "data")
 
 # Translations shipped with the app. `spine` describes how the source file's
 # books line up with the canonical KJV versification:
