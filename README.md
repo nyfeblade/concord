@@ -98,12 +98,28 @@ python3 build/verify.py       # 42 integrity checks
 cd docs && python3 -m http.server 8787
 ```
 
-`build/test_search.mjs` runs the real browser search engine headlessly, which
-is how ranking changes get checked:
+Both harnesses run the real browser engine headlessly, so ranking changes get
+measured rather than eyeballed:
 
 ```bash
-node build/test_search.mjs "anxiety" "fear not"
+node build/test_search.mjs "anxiety" "fear not"   # inspect results
+node build/eval.mjs                               # score the query suite
 ```
+
+`eval.mjs` scores twelve queries against the verses a reasonable person
+expects back. It currently reports **recall@10 of 71% and MRR 0.733**, with
+eight of the twelve returning their best expected verse at rank 1. That suite
+picked the cross-reference weight: every configuration at 0.85 or above beat
+every configuration at 0.62, which is the measurement behind the claim that
+the curated graph carries more of the answer than the wording does.
+
+The known weak spot is open doctrinal questions. *What happens after death*
+still returns narrative deaths rather than Hebrews 9:27, because nothing
+lexical separates a story from a doctrine and the topical headings that do
+know the difference are not decisive enough on their own. Concrete phrasings,
+topics and references all do well; wide theological questions are where a
+curated system shows its limits, and it is honest to say so rather than tune
+the suite until it looks solved.
 
 ## What ships
 

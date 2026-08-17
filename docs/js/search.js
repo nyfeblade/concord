@@ -18,21 +18,31 @@ const K1 = 1.2;
 const B = 0.75;
 
 const SEEDS_FOR_DIFFUSION = 140;
-const WEIGHT = { lexical: 1.0, graph: 0.62, topic: 0.5 };
+
+// Exposed so build/test_search.mjs and the tuning sweep can vary them without
+// editing the module. Defaults are what shipped, chosen against the query set
+// in build/eval.mjs rather than by feel.
+export const tuning = {
+  lexical: 1.0,
+  // 0.85 rather than the 0.62 this started at. Swept against build/eval.mjs:
+  // every configuration at 0.85+ beat every configuration at 0.62, moving
+  // recall@10 from 63% to 71%. The curated cross-references carry more of the
+  // answer than the wording does, which is the whole premise.
+  graph: 0.85,
+  topic: 0.5,
+  synonymDiscount: 0.28,
+  synonymsPerTerm: 3,
+  synonymFloor: 0.22,
+  morphDiscount: 0.42,
+  expansionDfShare: 0.04,
+  coordFloor: 0.28,
+};
 
 // Synonyms exist to add recall, never to redirect the query. Held low and
 // few, because the thesaurus is built from translation equivalence and some
 // of those equivalences are wide: the KJV's "terrible" is the Berean's
 // "awesome", which is correct and still not what someone typing "fear" wants
 // at the top of their results.
-const SYNONYM_DISCOUNT = 0.28;
-const SYNONYMS_PER_TERM = 3;
-const SYNONYM_FLOOR = 0.22;
-
-// Derivational siblings: anxiety/anxious, gracious/grace. Weighted above
-// synonyms because they are the same idea in a different part of speech,
-// not a different word a translator happened to choose.
-const MORPH_DISCOUNT = 0.42;
 
 let ready = null;
 
@@ -81,7 +91,7 @@ async function lexical(words, ctx) {
     for (const sib of (ctx.morphology[stem] || [])) {
       if (terms.has(sib)) continue;
       terms.set(sib, {
-        weight: MORPH_DISCOUNT, surfaces: new Set(),
+        weight: tuning.morphDiscount, surfaces: new Set(),
         origin: 'morph', of: stem,
       });
     }
@@ -93,10 +103,10 @@ async function lexical(words, ctx) {
     if (terms.get(stem).origin !== 'query') continue;
     let taken = 0;
     for (const [syn, score] of (ctx.thesaurus[stem] || [])) {
-      if (taken >= SYNONYMS_PER_TERM) break;
-      if (terms.has(syn) || score < SYNONYM_FLOOR) continue;
+      if (taken >= tuning.synonymsPerTerm) break;
+      if (terms.has(syn) || score < tuning.synonymFloor) continue;
       terms.set(syn, {
-        weight: SYNONYM_DISCOUNT * score,
+        weight: tuning.synonymDiscount * score,
         surfaces: new Set(), origin: 'synonym', of: stem,
       });
       taken++;
@@ -104,6 +114,22 @@ async function lexical(words, ctx) {
   }
 
   const postings = await data.postingsFor([...terms.keys()]);
+
+  // Drop expansions that turn out to be near-ubiquitous. "happens" reaches
+  // "pass" through the thesaurus, which is a fair translation equivalence and
+  // a disaster in practice: "came to pass" appears in over a thousand verses
+  // and drowns the query. A word matching this much of the Bible is not
+  // narrowing anything down.
+  const EXPANSION_DF_CAP = Math.round(ctx.docs * tuning.expansionDfShare);
+  for (const [stem, entry] of [...terms]) {
+    if (entry.origin === 'query') continue;
+    const post = postings.get(stem);
+    if (post && post.verses.length > EXPANSION_DF_CAP) {
+      terms.delete(stem);
+      postings.delete(stem);
+    }
+  }
+
   const scores = new Float32Array(ctx.docs);
   const hits = new Map();        // verse -> Set of matched query stems
 
@@ -134,12 +160,15 @@ async function lexical(words, ctx) {
   // answer than one carrying a single rare word from it, and plain BM25 will
   // happily rank the latter first when that word has a high idf. This is what
   // keeps "fear not" on verses containing both words.
+  //
+  // Damping verses reached only through an expansion was tried here and
+  // measured no better than leaving them alone, so it is not done.
   if (queryStems.length > 1) {
     for (let v = 0; v < scores.length; v++) {
       if (scores[v] === 0) continue;
       const matched = hits.get(v);
       const ratio = (matched ? matched.size : 0) / queryStems.length;
-      scores[v] *= 0.28 + 0.72 * ratio * ratio;
+      scores[v] *= tuning.coordFloor + (1 - tuning.coordFloor) * ratio * ratio;
     }
   }
   return { scores, hits, terms, queryStems };
@@ -209,7 +238,9 @@ function topical(queryStems, ctx) {
     // A 700-verse heading like "Wicked" is a weaker statement about any one
     // verse than a 12-verse heading like "Adoption".
     const spread = 1 / Math.sqrt(entry.topic.v.length);
-    const weight = entry.coverage * spread * 6;
+    // No global scale factor here: topic scores are normalised by their own
+    // peak during fusion, so a uniform multiplier would cancel out.
+    const weight = entry.coverage * spread;
     for (const v of entry.topic.v) {
       scores[v] += weight;
       let list = byVerse.get(v);
@@ -255,7 +286,7 @@ export async function search(query, { limit = 60, book = null } = {}) {
       const corroborated = (g > 0.12 && t > 0) || g > 0.3 || t > 0.45;
       if (!corroborated) continue;
     }
-    const score = WEIGHT.lexical * l + WEIGHT.graph * g + WEIGHT.topic * t;
+    const score = tuning.lexical * l + tuning.graph * g + tuning.topic * t;
     out.push({
       verse: v, score,
       lexical: l, graph: g, topic: t,

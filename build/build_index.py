@@ -32,7 +32,18 @@ STOPWORDS = {
     "out", "were", "so", "if", "on", "an", "at", "by", "or",
     "into", "up", "then", "hath", "had", "her", "she", "our", "us",
     "who", "one", "also", "may", "do", "did", "these", "those", "what",
+    # Function words. The KJV leans on these heavily, and leaving them in lets
+    # a question like "what happens after death" rank narrative formulas
+    # ("and it came to pass after...") above anything doctrinal.
+    "after", "before", "upon", "among", "against", "between", "through",
+    "until", "while", "whom", "whose", "whether", "either", "both", "each",
+    "any", "some", "own", "very", "even", "yet", "thus", "hence", "therein",
+    "thereof", "thereby", "wherein", "whereof", "whereby", "herein", "hereof",
+    "unto", "toward", "within", "without", "again", "same", "such", "than",
 }
+# Deliberately NOT stopped despite being common: come, said, make, go, take.
+# They are ordinary verbs carrying real meaning — "come unto me all ye that
+# labour" has to stay findable.
 
 # Negation is not noise in scripture. "fear not", "thou shalt not kill" and
 # "nothing shall be impossible" all turn on a word a normal stoplist throws
