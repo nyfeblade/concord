@@ -34,6 +34,25 @@ words in common with your query rises to the top.
 covering 88% of the Bible. Broad headings are weighted down: "Wicked" with 724
 verses says less about any one of them than "Adoption" with twelve.
 
+## The original languages
+
+Every phrase in the King James text carries the Strong's number of the Hebrew
+or Greek behind it — 374,069 tags across all 31,102 verses, with the full
+14,089-entry lexicon. Click any word while reading and you get its definition
+and every other verse using that same original word, however the English
+varies.
+
+That is the thing a concordance exists for. Hebrew *chesed* is rendered
+*mercy* 121 times, *kindness* 32, *lovingkindness* 17 and *goodness* 9 — one
+idea wearing four English coats, which searching the English can never reveal.
+Greek *agape* is *love* 39 times and *charity* 11.
+
+The tagging came out of OSIS markup that also encodes the words the 1611
+translators supplied (still shown in italics, as they printed them) and their
+own marginal readings — 5,844 of those are kept as translators' notes. The
+build asserts that the tagged chunks reassemble into the printed King James
+text character for character, and fails if they ever stop matching.
+
 ## The hard part was the English, not the search
 
 The translations span 1530 to 2022. Before anything can be indexed they have to
@@ -69,6 +88,17 @@ domain-exact thesaurus from the text itself.
 It also learned Early Modern spelling unsupervised: `euill`/`evil`,
 `reioyce`/`rejoice`, `seruant`/`servant`. Nobody wrote those rules.
 
+## What else it does
+
+- **Compare** any chapter across as many translations as you like, side by side
+- **Quoted phrases** — `"fear not"` requires the words together and in order
+- **Save verses** to a list held in your browser, with nothing sent anywhere
+- **Copy** a verse with its reference and translation already attached
+- **Contents** for all 66 books, and a chapter grid inside every book
+- **References** (`John 3:16`, `1 cor 13:4-7`, `Ps 23`) and **Strong's numbers**
+  (`H2617`, `G26`) typed into the search box go straight where they should
+- `/` focuses search; the arrow keys page through chapters while reading
+
 ## Translations
 
 All public domain, all shipped with the app.
@@ -94,7 +124,7 @@ number would silently show the wrong psalm.
 ```bash
 ./build/fetch_sources.sh      # ~150MB from upstream datasets
 python3 build/build_all.py    # ~25s, needs numpy + scipy
-python3 build/verify.py       # 42 integrity checks
+python3 build/verify.py       # 51 integrity checks
 cd docs && python3 -m http.server 8787
 ```
 
@@ -127,6 +157,7 @@ the suite until it looks solved.
 | --- | --- |
 | Twelve translations | 50 MB, sharded per book |
 | Cross-reference graph | 9 MB, both directions |
+| Strong's tagging, lexicon and occurrences | 17 MB |
 | Lexical index | 4.4 MB across 301 shards |
 | Concept graph | 4.9 MB binary, one random-walk table |
 | Topics, thesaurus, morphology | 3 MB |

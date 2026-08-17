@@ -13,6 +13,7 @@ const toastEl = document.getElementById('toast');
 const state = {
   meta: null,
   translation: localStorage.getItem('concord.translation') || 'KJV',
+  interlinear: localStorage.getItem('concord.interlinear') === '1',
   lastQuery: '',
   lastResults: null,
 };
@@ -173,10 +174,11 @@ function renderHome() {
     el('section', { class: 'hero' },
       el('h1', {}, 'Search the Bible by what it means'),
       el('p', {},
-        'Twelve translations, 877,377 scholarly cross-references and Nave\'s ' +
-        'topical index, fused into one search. It finds the verse you meant ' +
-        'even when it shares no words with what you typed.'),
+        'Twelve translations, 877,377 scholarly cross-references, Nave\'s ' +
+        'topical index and the Hebrew and Greek behind every word. It finds ' +
+        'the verse you meant even when it shares none of your words.'),
       el('div', { class: 'suggestions' }, chips,
+        el('a', { class: 'chip chip-alt', href: '#/word/H2617' }, 'Word study: chesed →'),
         el('a', { class: 'chip chip-alt', href: '#/books' }, 'Browse all 66 books →')),
       el('p', { class: 'hero-note' },
         'Runs entirely in your browser. No account, no server, no AI — the ' +
@@ -197,7 +199,12 @@ function renderHome() {
         el('h3', {}, el('b', {}, '03'), 'Topics'),
         el('p', {}, 'Nave\'s and Torrey\'s subject headings, 3,280 of them, ' +
           'covering 88% of the Bible. Human editors saying plainly what a ' +
-          'passage is about.')))));
+          'passage is about.')),
+      el('div', { class: 'pillar' },
+        el('h3', {}, el('b', {}, '04'), 'Original languages'),
+        el('p', {}, 'Every King James word is tagged with the Hebrew or Greek ' +
+          'behind it. Click one to see its definition and every other verse ' +
+          'using that same word, however the English varies.')))));
 }
 
 async function renderSearch(query) {
@@ -209,6 +216,10 @@ async function renderSearch(query) {
     el('div', { class: 'results-head' },
       el('h2', {}, 'Searching'),
       el('span', { class: 'results-count' }, el('span', { class: 'loading' })))));
+
+  // A bare Strong's number is a word study, not a search.
+  const strongs = parseStrongs(query);
+  if (strongs) { go(`#/word/${strongs}`); return; }
 
   // A bare reference goes straight to the text rather than through search.
   const ref = refs.parseReference(query);
@@ -241,21 +252,48 @@ async function renderSearch(query) {
   // most of the Bible to fill a list nobody scrolls to the end of.
   const list = el('div', { class: 'verse-list' });
   const countEl = el('span', { class: 'results-count' });
-  let shown = 0;
+  let cursor = 0;   // position in the ranked list
+  let kept = 0;     // cards actually rendered
+
+  // Quoting a phrase means the words have to appear together, in order. The
+  // index stores no positions, so ranking finds the candidates and the verse
+  // text decides. Checked against the translation being read and the KJV,
+  // since the index matched across all twelve and the phrase may live in
+  // either.
+  const phrases = res.phrases.map((p) => p.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const contains = (haystack) => {
+    if (!haystack) return false;
+    const flat = haystack.toLowerCase().replace(/[\u2018\u2019']/g, "'").replace(/\s+/g, ' ');
+    return phrases.every((p) => flat.includes(p));
+  };
 
   const renderPage = async () => {
-    const batch = res.results.slice(shown, shown + PAGE_SIZE);
-    if (!batch.length) return false;
-    const texts = await verseTexts(batch.map((r) => r.verse));
-    list.append(...batch.map((r) =>
-      verseCard(r.verse, texts.get(r.verse), {
-        pattern, result: r, onOpen: (i) => openVerse(i),
-      })));
-    shown += batch.length;
-    countEl.replaceChildren(shown < res.total
-      ? `${shown.toLocaleString()} of ${plural(res.total, 'verse', 'verses')}`
-      : plural(res.total, 'verse', 'verses'));
-    return shown < res.results.length;
+    const cards = [];
+    while (cards.length < PAGE_SIZE && cursor < res.results.length) {
+      const slice = res.results.slice(cursor, cursor + PAGE_SIZE);
+      cursor += slice.length;
+      const indices = slice.map((r) => r.verse);
+      const texts = await verseTexts(indices);
+      const kjv = phrases.length && state.translation !== 'KJV'
+        ? await verseTexts(indices, 'KJV') : null;
+      for (const r of slice) {
+        const text = texts.get(r.verse);
+        if (phrases.length &&
+            !contains(text) && !(kjv && contains(kjv.get(r.verse)))) continue;
+        cards.push(verseCard(r.verse, text, {
+          pattern, result: r, onOpen: (i) => openVerse(i),
+        }));
+      }
+    }
+    if (!cards.length) return false;
+    list.append(...cards);
+    kept += cards.length;
+    const done = cursor >= res.results.length;
+    countEl.replaceChildren(phrases.length
+      ? `${kept.toLocaleString()} exact ${kept === 1 ? 'match' : 'matches'}${done ? '' : ' so far'}`
+      : (done ? plural(res.total, 'verse', 'verses')
+              : `${kept.toLocaleString()} of ${plural(res.total, 'verse', 'verses')}`));
+    return cursor < res.results.length;
   };
 
   const expansions = res.terms.filter((t) => t.origin !== 'query');
@@ -301,10 +339,14 @@ async function renderSearch(query) {
       more.textContent = 'Show more verses';
     } else {
       sentinel.replaceChildren(el('p', { class: 'list-end' },
-        res.total > res.results.length
-          ? `End of the first ${res.results.length.toLocaleString()} results. ` +
-            'Add another word to narrow the search.'
-          : 'That is every match.'));
+        phrases.length
+          ? (kept ? 'That is every exact match among the ranked results.'
+                  : 'No verse contains that exact phrase. Drop the quotes to ' +
+                    'search the words separately.')
+          : (res.total > res.results.length
+              ? `End of the first ${res.results.length.toLocaleString()} results. ` +
+                'Add another word to narrow the search.'
+              : 'That is every match.')));
       stopAutoLoad();
     }
     loading = false;
@@ -312,7 +354,8 @@ async function renderSearch(query) {
 
   view.replaceChildren(el('div', { class: 'wrap' },
     el('div', { class: 'results-head' },
-      el('h2', {}, `“${query}”`), countEl),
+      el('h2', {}, /^["'\u201c].*["'\u201d]$/.test(query.trim())
+        ? query.trim() : `\u201c${query}\u201d`), countEl),
     expansionNote,
     el('div', { class: 'split' },
       el('div', {}, list, sentinel),
@@ -353,15 +396,47 @@ async function renderReader(bookId, chapter, verse) {
   const verses = (text && text.c[chapter - 1]) || [];
   const firstIndex = refs.indexOf(book.id, chapter, 1);
 
-  const body = el('div', { class: 'chapter' });
+  // The Strong's tagging follows the King James text, so the interlinear view
+  // is only meaningful there. Everywhere else the toggle is hidden rather
+  // than shown broken.
+  const canInterlinear = state.translation === 'KJV';
+  const tagged = canInterlinear && state.interlinear
+    ? await data.strongsWords(book.id) : null;
+
+  const saved = savedSet();
+  const body = el('div', { class: 'chapter' + (tagged ? ' chapter-interlinear' : '') });
   verses.forEach((t, i) => {
     const index = firstIndex + i;
     const node = el('span', {
-      class: 'v', id: `v${i + 1}`, tabindex: '0', role: 'button',
+      class: 'v' + (saved.has(index) ? ' v-saved' : ''),
+      id: `v${i + 1}`, tabindex: '0', role: 'button',
       'aria-current': verse && Number(verse) === i + 1 ? 'true' : null,
       onclick: () => openVerse(index),
       onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openVerse(index); } },
-    }, el('sup', { class: 'vn' }, String(i + 1)), t || '—');
+    }, el('sup', { class: 'vn' }, String(i + 1)));
+
+    const chunks = tagged && tagged[String(index)];
+    if (chunks) {
+      for (const c of chunks) {
+        const ids = Array.isArray(c[1]) ? c[1] : null;
+        const supplied = c[1] === 0 || c[2] === 1;
+        if (!c[0]) continue;
+        if (ids && ids.length) {
+          node.append(el('a', {
+            class: 'w' + (supplied ? ' w-supplied' : ''),
+            href: `#/word/${ids[0]}`,
+            title: ids.join(', '),
+            onclick: (e) => e.stopPropagation(),
+          }, c[0]));
+        } else {
+          node.append(supplied
+            ? el('i', { class: 'w-supplied' }, c[0])
+            : document.createTextNode(c[0]));
+        }
+      }
+    } else {
+      node.append(t || '—');
+    }
     body.append(node, ' ');
   });
 
@@ -388,6 +463,16 @@ async function renderReader(bookId, chapter, verse) {
         el('a', { class: 'crumb', href: '#/books' }, 'Contents'),
         el('h2', {}, title)),
       el('div', { class: 'reader-nav' },
+        canInterlinear ? el('button', {
+          class: 'btn' + (state.interlinear ? ' btn-on' : ''), type: 'button',
+          title: 'Show the Hebrew and Greek behind each word',
+          onclick: () => {
+            state.interlinear = !state.interlinear;
+            localStorage.setItem('concord.interlinear', state.interlinear ? '1' : '0');
+            route();
+          },
+        }, state.interlinear ? 'Original ✓' : 'Original') : null,
+        el('a', { class: 'btn', href: `#/compare/${book.id}/${chapter}` }, 'Compare'),
         el('a', { class: 'btn', href: prev || '#', 'aria-disabled': !prev }, '← Previous'),
         el('a', { class: 'btn', href: next || '#', 'aria-disabled': !next }, 'Next →'))),
     el('div', { class: 'split' }, body, panel)));
@@ -420,12 +505,29 @@ async function openVerse(index, { scroll = true } = {}) {
 
   // the verse itself
   const own = await verseText(index);
+  const at2 = refs.locate(index);
+  const saveBtn = el('button', {
+    class: 'mini', type: 'button',
+    'data-on': isSaved(index) ? '' : null,
+    onclick: (e) => {
+      const on = toggleSaved(index);
+      if (on) e.currentTarget.setAttribute('data-on', '');
+      else e.currentTarget.removeAttribute('data-on');
+      e.currentTarget.lastChild.textContent = on ? 'Saved' : 'Save';
+      const inReader = document.getElementById(`v${at2.verse}`);
+      if (inReader) inReader.classList.toggle('v-saved', on);
+    },
+  }, el('span', {}, '★'), el('span', {}, isSaved(index) ? 'Saved' : 'Save'));
+
   cards.push(el('div', { class: 'card' },
     el('h3', {}, refs.format(index)),
     el('div', { class: 'card-body' },
       el('div', { class: 'verse-text' }, own || '—'),
-      el('p', { style: 'margin-top:.6rem' },
-        el('a', { class: 'chip', href: readerHash(index) }, 'Read in context')))));
+      el('div', { class: 'verse-actions' },
+        el('a', { class: 'mini', href: readerHash(index) }, 'Read in context'),
+        el('a', { class: 'mini', href: `#/compare/${at2.book.id}/${at2.chapter}` }, 'Compare'),
+        el('button', { class: 'mini', type: 'button', onclick: () => copyVerse(index) }, 'Copy'),
+        saveBtn))));
 
   // cross-references
   const entries = (xrefBook && xrefBook[String(index)]) || [];
@@ -464,6 +566,48 @@ async function openVerse(index, { scroll = true } = {}) {
       el('div', { class: 'topic-list' }, chips)));
   }
 
+  // original language
+  const wordBook = await data.strongsWords(at.book.id);
+  const chunks = wordBook && wordBook[String(index)];
+  if (chunks) {
+    const ids = [];
+    for (const c of chunks) {
+      if (Array.isArray(c[1])) for (const id of c[1]) if (!ids.includes(id)) ids.push(id);
+    }
+    const lex = await data.strongsEntries(ids);
+    const rows = [];
+    for (const c of chunks) {
+      if (!Array.isArray(c[1])) continue;
+      const english = c[0].trim();
+      for (const id of c[1]) {
+        const e = lex.get(id);
+        if (!e) continue;
+        rows.push(el('a', { class: 'ref-item strongs-row', href: `#/word/${id}` },
+          el('b', {}, english || '—'),
+          el('span', {},
+            el('i', { class: 'strongs-lemma',
+              lang: e.g === 'greek' ? 'grc' : 'he',
+              dir: e.g === 'greek' ? 'ltr' : 'rtl' }, e.l),
+            ' ', e.x)));
+      }
+    }
+    if (rows.length) {
+      cards.push(el('div', { class: 'card' },
+        el('h3', {}, 'Behind the English'),
+        el('div', { class: 'ref-list' }, rows)));
+    }
+  }
+
+  // the KJV translators' own marginal readings
+  const notes = await data.translatorNotes();
+  const note = notes && notes[String(index)];
+  if (note && note.length) {
+    cards.push(el('div', { class: 'card' },
+      el('h3', {}, "Translators' note"),
+      el('div', { class: 'card-body' },
+        note.map((n) => el('p', {}, n)))));
+  }
+
   // every translation
   const others = state.meta.translations;
   const renderings = await Promise.all(others.map(async (t) => {
@@ -479,6 +623,280 @@ async function openVerse(index, { scroll = true } = {}) {
   if (scroll && window.matchMedia('(max-width: 900px)').matches) {
     panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+}
+
+// ---------- saved verses ----------
+// Kept in localStorage. No account, so the list belongs to this browser and
+// nothing about it leaves the machine.
+
+const SAVED_KEY = 'concord.saved';
+
+function savedSet() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(SAVED_KEY) || '[]'));
+  } catch { return new Set(); }
+}
+
+function isSaved(index) { return savedSet().has(index); }
+
+function toggleSaved(index) {
+  const set = savedSet();
+  const on = !set.has(index);
+  if (on) set.add(index); else set.delete(index);
+  localStorage.setItem(SAVED_KEY, JSON.stringify([...set].sort((a, b) => a - b)));
+  toast(on ? `Saved ${refs.format(index)}` : `Removed ${refs.format(index)}`);
+  return on;
+}
+
+async function copyVerse(index) {
+  const text = await verseText(index);
+  const line = `${text}\n— ${refs.format(index)} (${state.translation})`;
+  try {
+    await navigator.clipboard.writeText(line);
+    toast('Verse copied');
+  } catch {
+    // Clipboard access is refused outside a secure context; fall back to a
+    // selection the reader can copy themselves rather than failing silently.
+    const ta = el('textarea', { style: 'position:fixed;opacity:0' });
+    ta.value = line;
+    document.body.append(ta);
+    ta.select();
+    try { document.execCommand('copy'); toast('Verse copied'); }
+    catch { toast('Could not copy — select the text instead'); }
+    ta.remove();
+  }
+}
+
+async function renderSaved() {
+  document.title = 'Saved verses — Concord';
+  const indices = [...savedSet()].sort((a, b) => a - b);
+  if (!indices.length) {
+    view.replaceChildren(el('div', { class: 'wrap' },
+      el('div', { class: 'empty' },
+        el('h3', {}, 'Nothing saved yet'),
+        el('p', {}, 'Open any verse and choose Save to keep it here. The list ' +
+          'lives in this browser only.'))));
+    return;
+  }
+  const texts = await verseTexts(indices);
+  view.replaceChildren(el('div', { class: 'wrap' },
+    el('div', { class: 'results-head' },
+      el('h2', {}, 'Saved verses'),
+      el('span', { class: 'results-count' }, plural(indices.length, 'verse', 'verses'))),
+    el('div', { class: 'verse-list' },
+      indices.map((i) => verseCard(i, texts.get(i), { onOpen: (x) => go(readerHash(x)) })))));
+}
+
+// ---------- compare translations ----------
+
+const COMPARE_KEY = 'concord.compare';
+
+function comparePicks() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COMPARE_KEY) || 'null');
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch { /* fall through to the default */ }
+  return ['KJV', 'BSB', 'YLT'];
+}
+
+async function renderCompare(bookId, chapter) {
+  const book = refs.bookById(Number(bookId));
+  if (!book) { go('#/'); return; }
+  chapter = Math.min(Math.max(Number(chapter) || 1, 1), book.chapters.length);
+  const title = book.chapters.length === 1 ? book.name : `${book.name} ${chapter}`;
+  document.title = `${title} compared — Concord`;
+
+  const picks = comparePicks().filter((id) =>
+    state.meta.translations.some((t) => t.id === id));
+  const all = state.meta.translations;
+
+  const picker = el('div', { class: 'picker' }, all.map((t) => {
+    const box = el('input', {
+      type: 'checkbox', checked: picks.includes(t.id),
+      onchange: () => {
+        const next = all.map((x) => x.id).filter((id) =>
+          id === t.id ? box.checked : picks.includes(id));
+        localStorage.setItem(COMPARE_KEY, JSON.stringify(next));
+        route();
+      },
+    });
+    return el('label', { title: t.name }, box, t.id);
+  }));
+
+  const body = el('div', {});
+  const first = refs.indexOf(book.id, chapter, 1);
+  const count = book.chapters[chapter - 1];
+
+  const loaded = await Promise.all(picks.map(async (id) => {
+    const payload = await data.bookText(id, book.id);
+    return [id, (payload && payload.c[chapter - 1]) || []];
+  }));
+
+  for (let i = 0; i < count; i++) {
+    const index = first + i;
+    body.append(el('div', { class: 'compare-row' },
+      el('a', {
+        class: 'compare-ref', href: readerHash(index),
+        style: 'text-decoration:none;display:block',
+      }, refs.format(index)),
+      el('div', {
+        class: 'compare-grid',
+        style: `grid-template-columns: repeat(${Math.min(picks.length, 3)}, minmax(0, 1fr))`,
+      },
+        loaded.map(([id, verses]) => el('div', { class: 'compare-cell' },
+          el('b', {}, id),
+          verses[i]
+            ? el('span', {}, verses[i])
+            : el('em', {}, 'not translated'))))));
+  }
+
+  view.replaceChildren(el('div', { class: 'wrap' },
+    el('div', { class: 'reader-head' },
+      el('div', {},
+        el('a', { class: 'crumb', href: readerHash(first) }, 'Read'),
+        el('h2', {}, `${title} compared`)),
+      el('div', { class: 'reader-nav' },
+        el('a', {
+          class: 'btn', href: chapter > 1 ? `#/compare/${book.id}/${chapter - 1}` : '#',
+          'aria-disabled': chapter <= 1,
+        }, '← Previous'),
+        el('a', {
+          class: 'btn',
+          href: chapter < book.chapters.length ? `#/compare/${book.id}/${chapter + 1}` : '#',
+          'aria-disabled': chapter >= book.chapters.length,
+        }, 'Next →'))),
+    el('div', { class: 'card', style: 'margin-bottom:1.2rem' },
+      el('h3', {}, 'Translations shown'), picker),
+    picks.length ? body : el('div', { class: 'empty' },
+      el('p', {}, 'Choose at least one translation.'))));
+}
+
+// ---------- original languages ----------
+
+const STRONGS_RE = /^\s*([hg])\s*0*(\d{1,4})\s*$/i;
+
+function parseStrongs(text) {
+  const m = STRONGS_RE.exec(text);
+  return m ? `${m[1].toUpperCase()}${parseInt(m[2], 10)}` : null;
+}
+
+async function renderWord(id) {
+  const entries = await data.strongsEntries([id]);
+  const entry = entries.get(id);
+  if (!entry) {
+    view.replaceChildren(el('div', { class: 'wrap' },
+      el('div', { class: 'empty' },
+        el('h3', {}, 'No such number'),
+        el('p', {}, `Strong's ${escapeHTML(id)} is not used in the King James text.`))));
+    return;
+  }
+
+  const lang = entry.g === 'greek' ? 'Greek' : 'Hebrew';
+  document.title = `${entry.x} — Strong's ${id} — Concord`;
+
+  const total = entry.r.reduce((a, [, n]) => a + n, 0) || 1;
+  const renderBars = el('div', { class: 'renderings' },
+    entry.r.map(([word, n]) => el('div', { class: 'rendering' },
+      el('span', { class: 'rendering-word' }, word),
+      el('span', { class: 'rendering-bar' },
+        el('i', { style: `width:${Math.max(2, (100 * n) / total).toFixed(1)}%` })),
+      el('span', { class: 'rendering-n' }, `${n}×`))));
+
+  const head = el('header', { class: 'word-head' },
+    el('div', { class: 'word-lemma', lang: entry.g === 'greek' ? 'grc' : 'he',
+      dir: entry.g === 'greek' ? 'ltr' : 'rtl' }, entry.l),
+    el('div', {},
+      el('h2', {}, entry.x),
+      el('p', { class: 'word-meta' },
+        `${lang} · Strong's ${id}` +
+        (entry.p ? ` · ${entry.p}` : '') +
+        (entry.o ? ` · ${entry.o}` : ''))));
+
+  const cards = [
+    el('div', { class: 'card' },
+      el('h3', {}, 'Definition'),
+      el('div', { class: 'card-body' }, el('p', {}, entry.d || '—'))),
+    entry.r.length ? el('div', { class: 'card' },
+      el('h3', {}, 'How the King James renders it'),
+      el('div', { class: 'card-body' }, renderBars)) : null,
+  ].filter(Boolean);
+
+  const list = el('div', { class: 'verse-list' });
+  const countEl = el('span', { class: 'results-count' });
+  const sentinel = el('div', { class: 'sentinel' });
+
+  view.replaceChildren(el('div', { class: 'wrap' },
+    el('a', { class: 'crumb', href: '#/' }, 'Word study'),
+    head,
+    el('div', { class: 'split' },
+      el('div', {},
+        el('div', { class: 'results-head' },
+          el('h3', { class: 'section-title' }, 'Every occurrence'), countEl),
+        list, sentinel),
+      el('aside', { class: 'panel' }, cards))));
+
+  const verses = await data.strongsOccurrences(id);
+  let shown = 0;
+  const more = el('button', {
+    class: 'btn load-more', type: 'button', onclick: () => loadMore(),
+  }, 'Show more verses');
+  sentinel.replaceChildren(more);
+
+  const renderPage = async () => {
+    const batch = verses.slice(shown, shown + PAGE_SIZE);
+    if (!batch.length) return false;
+    const texts = await verseTexts(batch, 'KJV');
+    const words = await Promise.all(batch.map((v) => taggedSpans(v, id)));
+    list.append(...batch.map((v, i) => {
+      const card = verseCard(v, texts.get(v), { onOpen: (x) => go(readerHash(x)) });
+      const spans = words[i];
+      if (spans.length) {
+        card.querySelector('.verse-text').innerHTML =
+          highlightSpans(texts.get(v), spans);
+      }
+      return card;
+    }));
+    shown += batch.length;
+    countEl.replaceChildren(shown < verses.length
+      ? `${shown} of ${plural(verses.length, 'verse', 'verses')}`
+      : plural(verses.length, 'verse', 'verses'));
+    return shown < verses.length;
+  };
+
+  let loading = false;
+  async function loadMore() {
+    if (loading) return;
+    loading = true; more.disabled = true; more.textContent = 'Loading…';
+    const hasMore = await renderPage();
+    if (hasMore) { more.disabled = false; more.textContent = 'Show more verses'; }
+    else { sentinel.replaceChildren(el('p', { class: 'list-end' }, 'That is every occurrence.')); stopAutoLoad(); }
+    loading = false;
+  }
+
+  await renderPage();
+  startAutoLoad(sentinel, loadMore);
+}
+
+// The English words in a verse that carry a given Strong's number.
+async function taggedSpans(verseIndex, id) {
+  const at = refs.locate(verseIndex);
+  if (!at) return [];
+  const book = await data.strongsWords(at.book.id);
+  const chunks = book && book[String(verseIndex)];
+  if (!chunks) return [];
+  return chunks
+    .filter((c) => Array.isArray(c[1]) && c[1].includes(id))
+    .map((c) => c[0].trim())
+    .filter(Boolean);
+}
+
+function highlightSpans(text, spans) {
+  if (!text || !spans.length) return escapeHTML(text || '');
+  const alts = [...new Set(spans)]
+    .sort((a, b) => b.length - a.length)
+    .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const re = new RegExp(`(${alts.join('|')})`, 'g');
+  return escapeHTML(text).replace(re, (m) => `<mark>${m}</mark>`);
 }
 
 // ---------- contents ----------
@@ -564,6 +982,34 @@ function renderAbout() {
       covering 88% of the Bible — human editors stating plainly what a passage
       is about. Larger headings are weighted down, since “Wicked” with 724
       verses says less about any one of them than “Adoption” with twelve.</p>
+
+      <h2>4. The original languages</h2>
+      <p>Every phrase in the King James text is tagged with the Strong's number
+      of the Hebrew or Greek word behind it — 374,069 tags across all 31,102
+      verses. Click any word while reading to get its lexicon entry and every
+      other verse using that same original word, no matter how the English
+      varies.</p>
+      <p>That last part is what a concordance is for. Hebrew <em>chesed</em> is
+      rendered <em>mercy</em> 121 times, <em>kindness</em> 32,
+      <em>lovingkindness</em> 17 and <em>goodness</em> 9 — one idea wearing
+      four English coats. Searching the English can never show you that; the
+      numbers can.</p>
+      <p>The build checks that the tagged chunks reassemble into the printed
+      King James text character for character. If they ever stop matching, the
+      build fails rather than showing you something that is not the verse.</p>
+
+      <h2>Searching</h2>
+      <ul>
+        <li><code>anxiety</code> — concept search across all four signals</li>
+        <li><code>"fear not"</code> — quoted, so the words must appear together
+        and in order</li>
+        <li><code>John 3:16</code>, <code>1 cor 13:4-7</code>, <code>Ps 23</code>
+        — references go straight to the text</li>
+        <li><code>H2617</code> or <code>G26</code> — a Strong's number opens the
+        word study</li>
+        <li><code>/</code> focuses the search box; the arrow keys page through
+        chapters while reading</li>
+      </ul>
 
       <h2>Why it can explain itself</h2>
       <p>Because every signal is a lookup rather than a learned weight, each
@@ -658,6 +1104,9 @@ async function route() {
     if (!parts.length) { input.value = ''; clearBtn.hidden = true; renderHome(); return; }
     if (parts[0] === 'q') { await renderSearch(decodeURIComponent(parts.slice(1).join('/'))); return; }
     if (parts[0] === 'read') { await renderReader(parts[1], parts[2], parts[3]); return; }
+    if (parts[0] === 'word') { await renderWord(parts[1]); return; }
+    if (parts[0] === 'compare') { await renderCompare(parts[1], parts[2]); return; }
+    if (parts[0] === 'saved') { await renderSaved(); return; }
     if (parts[0] === 'books') { renderBooks(); return; }
     if (parts[0] === 'about') { renderAbout(); return; }
     if (parts[0] === 'sources') { renderSources(); return; }
@@ -700,10 +1149,26 @@ clearBtn.addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === '/' && document.activeElement !== input) {
+  const typing = document.activeElement === input
+    || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if (e.key === '/' && !typing) {
     e.preventDefault(); input.focus(); input.select();
+    return;
   }
-  if (e.key === 'Escape' && document.activeElement === input) input.blur();
+  if (e.key === 'Escape' && document.activeElement === input) { input.blur(); return; }
+  if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+
+  // Chapter paging with the arrow keys, wherever a previous/next pair exists.
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    const btns = [...document.querySelectorAll('.reader-nav a.btn')]
+      .filter((a) => /Previous|Next/.test(a.textContent));
+    const target = e.key === 'ArrowLeft' ? btns[0] : btns[1];
+    if (target && target.getAttribute('aria-disabled') !== 'true'
+        && target.getAttribute('href') !== '#') {
+      e.preventDefault();
+      location.hash = target.getAttribute('href');
+    }
+  }
 });
 
 selectEl.addEventListener('change', () => {

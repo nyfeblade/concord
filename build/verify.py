@@ -182,6 +182,53 @@ def main():
     check("anxiety reaches anxious",
           morph and "anxious" in morph.get("anxieti", []))
 
+    print("\noriginal languages")
+    smeta = load("strongs/meta.json")
+    check("Strong's metadata present", bool(smeta))
+    check("every verse carries word tags",
+          smeta and smeta["taggedVerses"] == 31102, smeta and smeta["taggedVerses"])
+    check("both languages present",
+          smeta and smeta["hebrew"] > 8000 and smeta["greek"] > 5000,
+          smeta and (smeta["hebrew"], smeta["greek"]))
+
+    # The tagged chunks must reassemble into exactly the King James text. If
+    # they do not, the interlinear view is showing something that is not the
+    # verse, which is the one thing this project cannot do.
+    def flatten(s):
+        return "".join(ch for ch in s.lower() if ch.isalnum())
+
+    mismatched = []
+    for b in meta["books"]:
+        words = load(f"strongs/words/{b['id']}.json")
+        kjv = load(f"text/KJV/{b['id']}.json")
+        if not words or not kjv:
+            continue
+        for key, chunks in words.items():
+            bid, ch, v = spine[int(key)]
+            printed = kjv["c"][ch - 1][v - 1]
+            rebuilt = "".join(c[0] for c in chunks)
+            if flatten(printed) != flatten(rebuilt):
+                mismatched.append(f"{b['name']} {ch}:{v}")
+    check("tagged chunks reassemble into the King James text exactly",
+          not mismatched, f"{len(mismatched)} differ, e.g. {mismatched[:3]}")
+
+    lex = load("strongs/dict/H05.json")
+    check("lexicon shard loads", bool(lex))
+    chesed = lex and lex.get("H2617")
+    check("H2617 is chesed with renderings",
+          chesed and chesed["x"].startswith("ch") and chesed["r"][0][0] == "mercy",
+          chesed and (chesed.get("x"), chesed["r"][:1]))
+    occ = load("strongs/occ/H05.json")
+    check("H2617 occurrence list matches its count",
+          occ and chesed and len(occ.get("H2617", [])) == chesed["n"],
+          occ and len(occ.get("H2617", [])))
+    check("occurrence verse ids are inside the spine",
+          occ and all(0 <= v < 31102 for v in occ.get("H2617", [])))
+
+    notes = load("strongs/notes.json")
+    check("translators' marginal notes present",
+          notes and len(notes) > 5000, notes and len(notes))
+
     print(f"\n{CHECKS - len(FAILURES)}/{CHECKS} checks passed")
     if FAILURES:
         print("failed: " + ", ".join(FAILURES))

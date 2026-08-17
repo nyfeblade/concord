@@ -51,6 +51,38 @@ export const topicNames = () => json('topic-names.json');
 export const topicSubs = () => json('topic-subs.json');
 export const verseTopics = () => json('verse-topics.json');
 export const crossRefs = (bookId) => json(`xref/${bookId}.json`);
+
+// ---- original languages ----------------------------------------------------
+// Strong's numbers are sharded in blocks of 500 so a word study pulls one
+// small file rather than the whole 14,000-entry lexicon.
+
+const STRONGS_SHARD = 500;
+
+export function strongsShard(id) {
+  const n = parseInt(id.slice(1), 10);
+  return `${id[0]}${String(Math.floor(n / STRONGS_SHARD)).padStart(2, '0')}`;
+}
+
+export const strongsMeta = () => json('strongs/meta.json');
+export const strongsWords = (bookId) => json(`strongs/words/${bookId}.json`);
+export const translatorNotes = () => json('strongs/notes.json');
+
+export async function strongsEntries(ids) {
+  const keys = [...new Set(ids.map(strongsShard))];
+  const shards = await Promise.all(keys.map((k) => json(`strongs/dict/${k}.json`)));
+  const byKey = new Map(keys.map((k, i) => [k, shards[i]]));
+  const out = new Map();
+  for (const id of ids) {
+    const shard = byKey.get(strongsShard(id));
+    if (shard && shard[id]) out.set(id, shard[id]);
+  }
+  return out;
+}
+
+export async function strongsOccurrences(id) {
+  const shard = await json(`strongs/occ/${strongsShard(id)}.json`);
+  return (shard && shard[id]) || [];
+}
 export const bookText = (translation, bookId) =>
   json(`text/${translation}/${bookId}.json`);
 
