@@ -1,0 +1,27 @@
+name: Verify data pipeline
+
+on:
+  push:
+    branches: [main]
+    paths: ['build/**', 'site/js/**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: pip install numpy scipy
+      - name: Fetch upstream sources
+        run: ./build/fetch_sources.sh
+      - name: Rebuild everything from scratch
+        run: python3 build/build_all.py
+      - name: Integrity checks
+        run: python3 build/verify.py
+      - name: Ranking smoke test
+        run: node build/test_search.mjs "anxiety" "fear not" "lovingkindness"

@@ -1,0 +1,9 @@
+# Upstream downloads only. Recreate with build/fetch_sources.sh (~150MB).
+# Anchored with a leading slash so it does not also match site/data/, which
+# is the built output and must ship.
+/data/
+
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
