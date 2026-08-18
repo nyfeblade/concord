@@ -46,6 +46,7 @@ export const searchMeta = () => json('search-meta.json');
 export const docLengths = () => json('doclen.json');
 export const thesaurus = () => json('thesaurus.json');
 export const morphology = () => json('morphology.json');
+export const concepts = () => json('concepts.json');
 export const topics = () => json('topics.json');
 export const topicNames = () => json('topic-names.json');
 export const topicSubs = () => json('topic-subs.json');

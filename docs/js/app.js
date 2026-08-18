@@ -986,6 +986,19 @@ function renderAbout() {
       is about. Larger headings are weighted down, since “Wicked” with 724
       verses says less about any one of them than “Adoption” with twelve.</p>
 
+      <h2>When the Bible has no word for it</h2>
+      <p>Every expansion above is derived from the text itself, so none of them
+      can reach a word the translations never use. Search <em>loneliness</em>
+      and there is nothing to match — no English Bible here contains it. The
+      verses exist; they say <em>alone</em>, <em>solitary</em>,
+      <em>forsake</em>.</p>
+      <p>So one table is hand-written: 138 modern search terms mapped to the
+      biblical wording that carries them. It is editorial work, the same kind
+      that produced Nave's, and it lives in the repository as a plain list you
+      can read and disagree with. Every target is checked against the real
+      vocabulary when the data is built, and it only applies to words that
+      appear in none of the twelve translations.</p>
+
       <h2>4. The original languages</h2>
       <p>Every phrase in the King James text is tagged with the Strong's number
       of the Hebrew or Greek word behind it — 374,069 tags across all 31,102

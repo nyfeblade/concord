@@ -34,6 +34,27 @@ words in common with your query rises to the top.
 covering 88% of the Bible. Broad headings are weighted down: "Wicked" with 724
 verses says less about any one of them than "Adoption" with twelve.
 
+## The one thing the corpus cannot do
+
+Every expansion above is derived from the text itself, which means none of
+them can reach a word the translations never use. Search *loneliness* and
+there is nothing to match — no English Bible here contains it. The verses
+exist, they just say *alone*, *solitary*, *forsake*. Before this was fixed
+that query returned zero results.
+
+So there is one hand-written table, `build/build_concepts.py`: 138 modern
+search terms mapped to the biblical wording that carries them, best fit first.
+It is editorial work, which is how Nave's was made too, and it is a plain list
+anyone can read, argue with and send a correction for rather than a model
+nobody can inspect. Every target is checked against the real vocabulary at
+build time, so a word that only sounds biblical fails the build instead of
+silently doing nothing.
+
+It fires **only** for words absent from all twelve translations. Bridging
+words the corpus already has was measured and made results worse — the
+corpus-derived expansions are better calibrated, and the hand-written targets
+just diluted them.
+
 ## The original languages
 
 Every phrase in the King James text carries the Strong's number of the Hebrew

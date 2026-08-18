@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_graph          # noqa: E402
 import build_index          # noqa: E402
 import build_morphology     # noqa: E402
+import build_concepts       # noqa: E402
 import build_strongs        # noqa: E402
 import build_text           # noqa: E402
 import build_thesaurus      # noqa: E402
@@ -33,6 +34,7 @@ STEPS = [
     ("parallel-corpus thesaurus", build_thesaurus.build),
     ("derivational morphology", build_morphology.build),
     ("original languages", build_strongs.build),
+    ("curated concept bridge", build_concepts.build),
 ]
 
 

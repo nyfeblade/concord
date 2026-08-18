@@ -34,6 +34,9 @@ export const tuning = {
   synonymsPerTerm: 3,
   synonymFloor: 0.22,
   morphDiscount: 0.42,
+  // The curated bridge is the only route for a word no translation contains,
+  // so it carries real weight rather than being a faint hint.
+  conceptDiscount: 0.6,
   expansionDfShare: 0.04,
   coordFloor: 0.28,
 };
@@ -50,11 +53,11 @@ async function warm() {
   if (!ready) {
     ready = Promise.all([
       data.searchMeta(), data.docLengths(), data.thesaurus(),
-      data.topicNames(), data.topics(), data.morphology(),
-    ]).then(([sm, dl, th, tn, tp, mo]) => ({
+      data.topicNames(), data.topics(), data.morphology(), data.concepts(),
+    ]).then(([sm, dl, th, tn, tp, mo, co]) => ({
       docs: sm.docs, avgdl: sm.avgdl,
       doclen: dl, thesaurus: th || {}, topicNames: tn || {}, topics: tp || [],
-      morphology: mo || {},
+      morphology: mo || {}, concepts: co || {},
     }));
   }
   return ready;
@@ -76,14 +79,37 @@ async function lexical(words, ctx) {
   const stems = await data.vocabLookup(words);
   const terms = new Map();       // stem -> { weight, surfaces:Set }
 
+  const unmatched = [];
   words.forEach((w, i) => {
     const stem = stems[i];
-    if (!stem) return;           // "" is a stopword, null is unknown
+    if (stem === null) unmatched.push(w);   // in no translation at all
+    if (!stem) return;                      // "" is a stopword
     const entry = terms.get(stem) || { weight: 0, surfaces: new Set(), origin: 'query' };
     entry.weight = Math.max(entry.weight, 1);
     entry.surfaces.add(w);
     terms.set(stem, entry);
   });
+
+  // The curated concept bridge, and only for words no translation contains.
+  //
+  // Bridging words the corpus already has was measured and made things worse:
+  // "forgiving someone who wronged you" lost a verse from its top ten,
+  // because the corpus-derived expansions were already well calibrated for
+  // that word and the hand-written targets just diluted them. The bridge
+  // earns its place exactly where nothing else can reach - "loneliness"
+  // appears in none of the twelve, so without it the query matches nothing
+  // at all.
+  const bridged = new Set();
+  for (const key of unmatched) {
+    for (const [target, weight] of (ctx.concepts[key] || [])) {
+      if (terms.has(target)) continue;
+      terms.set(target, {
+        weight: tuning.conceptDiscount * weight, surfaces: new Set(),
+        origin: 'concept', of: key,
+      });
+      bridged.add(target);
+    }
+  }
 
   // Derivational siblings first: "anxiety" has to be able to reach the verses
   // that say "anxious", since no translation of Philippians 4:6 uses the noun.
@@ -122,7 +148,7 @@ async function lexical(words, ctx) {
   // narrowing anything down.
   const EXPANSION_DF_CAP = Math.round(ctx.docs * tuning.expansionDfShare);
   for (const [stem, entry] of [...terms]) {
-    if (entry.origin === 'query') continue;
+    if (entry.origin === 'query' || entry.origin === 'concept') continue;
     const post = postings.get(stem);
     if (post && post.verses.length > EXPANSION_DF_CAP) {
       terms.delete(stem);
