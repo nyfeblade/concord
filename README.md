@@ -34,6 +34,30 @@ words in common with your query rises to the top.
 covering 88% of the Bible. Broad headings are weighted down: "Wicked" with 724
 verses says less about any one of them than "Adoption" with twelve.
 
+## Typos
+
+An exact index matches nothing for a misspelling, so "forgivness" used to
+return no results at all. Both the search box and the reference parser are now
+tolerant.
+
+Words are matched with a skeleton key: collapse doubled letters, keep the
+first character, drop the vowels and the letters people slur. Most
+misspellings land on the same key as the word itself — `philippians`,
+`phillipians` and `philippains` all key to `plpns` — and edit distance picks
+the best candidate, with corpus frequency breaking ties. Each word is also
+filed under every single-character deletion of its key, which is what catches
+a dropped consonant (`loniness` → `loneliness`). No spellcheck dictionary
+ships: the vocabulary of the twelve translations is the dictionary.
+
+Book names get the same treatment, cautiously. `Phillipians 4:6`,
+`Genisis 1:1`, `Ecclesiates 3:1`, `Mathew 5:3` and `Psalsm 23` all go straight
+to the text. `Corinthans 13` deliberately does not — it is equally close to
+1 and 2 Corinthians, and guessing would be worse than asking. Ordinary
+searches like `hope` or `wisdom 5` are never dragged into the reader.
+
+Corrections are always shown, never silent: "Showing results for
+righteousness — rightousness was not in any translation."
+
 ## The one thing the corpus cannot do
 
 Every expansion above is derived from the text itself, which means none of

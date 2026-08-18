@@ -20,6 +20,7 @@ import build_morphology     # noqa: E402
 import build_concepts       # noqa: E402
 import build_strongs        # noqa: E402
 import build_text           # noqa: E402
+import build_typos          # noqa: E402
 import build_thesaurus      # noqa: E402
 import build_topics         # noqa: E402
 import build_xref           # noqa: E402
@@ -35,6 +36,7 @@ STEPS = [
     ("derivational morphology", build_morphology.build),
     ("original languages", build_strongs.build),
     ("curated concept bridge", build_concepts.build),
+    ("typo tolerance", build_typos.build),
 ]
 
 

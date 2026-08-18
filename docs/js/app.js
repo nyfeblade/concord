@@ -224,6 +224,7 @@ async function renderSearch(query) {
   // A bare reference goes straight to the text rather than through search.
   const ref = refs.parseReference(query);
   if (ref) {
+    if (ref.corrected) toast(`Showing ${ref.corrected}`);
     go(`#/read/${ref.book.id}/${ref.chapter}${ref.kind === 'verse' ? '/' + ref.verse : ''}`);
     return;
   }
@@ -296,6 +297,14 @@ async function renderSearch(query) {
     return cursor < res.results.length;
   };
 
+  const fixNote = (res.corrections && res.corrections.length)
+    ? el('div', { class: 'expansion correction' },
+        el('b', {}, 'Showing results for'),
+        res.corrections.map((c) => el('code', {}, c.to)),
+        el('span', {}, `— ${res.corrections.map((c) => c.from).join(', ')} ` +
+          `${res.corrections.length === 1 ? 'was not' : 'were not'} in any translation`))
+    : null;
+
   const expansions = res.terms.filter((t) => t.origin !== 'query');
   const expansionNote = expansions.length
     ? el('div', { class: 'expansion' },
@@ -356,6 +365,7 @@ async function renderSearch(query) {
     el('div', { class: 'results-head' },
       el('h2', {}, /^["'\u201c].*["'\u201d]$/.test(query.trim())
         ? query.trim() : `\u201c${query}\u201d`), countEl),
+    fixNote,
     expansionNote,
     el('div', { class: 'split' },
       el('div', {}, list, sentinel),
@@ -1026,6 +1036,12 @@ function renderAbout() {
         <li><code>/</code> focuses the search box; the arrow keys page through
         chapters while reading</li>
       </ul>
+      <p>Spelling is forgiving throughout. <code>forgivness</code>,
+      <code>rightousness</code> and <code>sheperd</code> all find what you
+      meant, and <code>Phillipians 4:6</code> or <code>Genisis 1:1</code> go
+      straight to the text. Corrections are always shown rather than applied
+      silently, and where a misspelling is genuinely ambiguous — Corinthans
+      could be either letter — it asks instead of guessing.</p>
 
       <h2>Why it can explain itself</h2>
       <p>Because every signal is a lookup rather than a learned weight, each

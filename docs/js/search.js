@@ -13,6 +13,7 @@
 // is on the list rather than asking the reader to trust it.
 
 import * as data from './data.js';
+import * as typo from './typo.js';
 
 const K1 = 1.2;
 const B = 0.75;
@@ -79,16 +80,43 @@ async function lexical(words, ctx) {
   const stems = await data.vocabLookup(words);
   const terms = new Map();       // stem -> { weight, surfaces:Set }
 
-  const unmatched = [];
+  const addQueryTerm = (stem, surface) => {
+    const entry = terms.get(stem) || { weight: 0, surfaces: new Set(), origin: 'query' };
+    entry.weight = Math.max(entry.weight, 1);
+    entry.surfaces.add(surface);
+    terms.set(stem, entry);
+  };
+
+  let unmatched = [];
   words.forEach((w, i) => {
     const stem = stems[i];
     if (stem === null) unmatched.push(w);   // in no translation at all
     if (!stem) return;                      // "" is a stopword
-    const entry = terms.get(stem) || { weight: 0, surfaces: new Set(), origin: 'query' };
-    entry.weight = Math.max(entry.weight, 1);
-    entry.surfaces.add(w);
-    terms.set(stem, entry);
+    addQueryTerm(stem, w);
   });
+
+  // Nothing in the index is fuzzy, so a misspelled word matches nothing at
+  // all. Correct before anything else runs: a typo has to be able to reach
+  // both the ordinary index and the concept bridge behind it.
+  const corrections = [];
+  if (unmatched.length) {
+    const fixed = await Promise.all(unmatched.map((w) => typo.correct(w)));
+    const repaired = [];
+    const lookups = [];
+    unmatched.forEach((w, i) => {
+      if (fixed[i]) { corrections.push({ from: w, to: fixed[i] }); lookups.push(fixed[i]); }
+      else repaired.push(w);
+    });
+    if (lookups.length) {
+      const fixedStems = await data.vocabLookup(lookups);
+      lookups.forEach((w, i) => {
+        const stem = fixedStems[i];
+        if (stem) addQueryTerm(stem, w);
+        else repaired.push(w);   // corrected, but still only a bridge key
+      });
+    }
+    unmatched = repaired;
+  }
 
   // The curated concept bridge, and only for words no translation contains.
   //
@@ -197,7 +225,7 @@ async function lexical(words, ctx) {
       scores[v] *= tuning.coordFloor + (1 - tuning.coordFloor) * ratio * ratio;
     }
   }
-  return { scores, hits, terms, queryStems };
+  return { scores, hits, terms, queryStems, corrections };
 }
 
 // ---- signal 2: cross-reference graph ---------------------------------------
@@ -293,7 +321,7 @@ const RETAIN = 2000;
 export async function search(query, { limit = RETAIN, book = null } = {}) {
   const ctx = await warm();
   const { words, phrases } = tokenize(query);
-  if (!words.length) return { results: [], topics: [], terms: [], phrases };
+  if (!words.length) return { results: [], topics: [], terms: [], phrases, corrections: [] };
 
   const lex = await lexical(words, ctx);
   const top = topical(lex.queryStems, ctx);
@@ -338,6 +366,7 @@ export async function search(query, { limit = RETAIN, book = null } = {}) {
       stem, origin: e.origin, of: e.of,
       surfaces: [...e.surfaces],
     })),
+    corrections: lex.corrections,
     graphAvailable: graph.available,
     phrases,
   };

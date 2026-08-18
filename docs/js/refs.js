@@ -3,6 +3,8 @@
 // The canonical spine is 31,102 verses in KJV order. A verse is identified
 // everywhere else in the app by its index into that spine.
 
+import { distance } from './typo.js';
+
 let BOOKS = null;
 let ALIASES = null;
 let STARTS = null;   // book id -> canonical index of its first verse
@@ -10,6 +12,7 @@ let STARTS = null;   // book id -> canonical index of its first verse
 const EXTRA_ALIASES = {
   'psalm': 19, 'psa': 19, 'pss': 19, 'ps': 19,
   'song': 22, 'songs': 22, 'canticles': 22, 'sos': 22, 'sng': 22,
+  'songofsongs': 22, 'songofsol': 22, 'songofsolomon': 22, 'canticle': 22,
   'ecc': 21, 'qoheleth': 21,
   'gen': 1, 'ge': 1, 'gn': 1,
   'ex': 2, 'exo': 2, 'exod': 2,
@@ -43,6 +46,8 @@ const EXTRA_ALIASES = {
   'pet': 60, 'pe': 60, 'pt': 60,
   'jude': 65, 'jud': 65, 'jd': 65,
   'rev': 66, 'rv': 66, 'apocalypse': 66, 'revelations': 66,
+  'revelationofjohn': 66, 'psalmsofdavid': 19, 'thepsalms': 19,
+  'actsoftheapostles': 44, 'lam': 25, 'ecc': 21, 'eccles': 21,
 };
 
 function normalise(s) {
@@ -139,39 +144,111 @@ export function formatRange(a, b) {
   return `${format(a)}-${y.verse}`;
 }
 
-// Matches "John 3:16", "1 cor 13:4-7", "Ps 23", "Genesis 1.1", "jn3:16"
-const REF = /^\s*((?:[123]\s*)?[a-z][a-z.]*(?:\s+[a-z]+)?)\s*\.?\s*(\d+)?\s*(?:[:.]\s*(\d+))?\s*(?:\s*[-–]\s*(\d+))?\s*$/i;
+// Reference parsing.
+//
+// One monolithic regex could not cope: it capped book names at two words, so
+// "Song of Solomon 2:1" failed, and it demanded a colon, so "john 3 16" did
+// too. Splitting the trailing numbers off the end and treating whatever
+// remains as the book name handles both, and every abbreviation, without
+// trying to enumerate the shapes in advance.
+
+const TRAILING = /\s*(\d{1,3})\s*(?:[:.,]|\s)\s*(\d{1,3})\s*(?:[-–—]\s*(\d{1,3}))?\s*$/;
+const TRAILING_ONE = /\s*(\d{1,3})\s*(?:[-–—]\s*(\d{1,3}))?\s*$/;
 
 export function parseReference(input) {
-  const m = REF.exec(input);
-  if (!m) return null;
-  let [, rawBook, chapter, verse, endVerse] = m;
-  let id = ALIASES.get(normalise(rawBook));
+  const text = String(input || '').trim();
+  if (!text || !/\d/.test(text) === false && !/[a-z]/i.test(text)) return null;
+
+  let book = text;
+  let chapter = null;
+  let verse = null;
+  let endVerse = null;
+
+  let m = TRAILING.exec(text);
+  if (m) {
+    book = text.slice(0, m.index);
+    chapter = parseInt(m[1], 10);
+    verse = parseInt(m[2], 10);
+    if (m[3]) endVerse = parseInt(m[3], 10);
+  } else {
+    m = TRAILING_ONE.exec(text);
+    if (m) {
+      book = text.slice(0, m.index);
+      chapter = parseInt(m[1], 10);
+      if (m[2]) endVerse = parseInt(m[2], 10);
+    }
+  }
+
+  book = book.trim();
+  if (!book || !/[a-z]/i.test(book)) return null;
+
+  const normalised = normalise(book);
+  let id = ALIASES.get(normalised);
+  let corrected = null;
   if (id === undefined) {
-    // Try dropping a trailing word that was actually part of the numbers
-    const parts = rawBook.trim().split(/\s+/);
-    if (parts.length > 1) id = ALIASES.get(normalise(parts.join('')));
-    if (id === undefined) return null;
+    const guess = nearestBook(normalised);
+    if (!guess) return null;
+    id = guess.id;
+    corrected = guess.name;
   }
-  const book = bookById(id);
-  if (!book) return null;
+  const meta = bookById(id);
+  if (!meta) return null;
 
-  // A one-chapter book written as "Jude 4" means verse 4, not chapter 4.
-  if (book.chapters.length === 1 && chapter && !verse) {
+  // A single-chapter book written as "Jude 4" means verse 4, not chapter 4.
+  if (meta.chapters.length === 1 && chapter !== null && verse === null) {
     verse = chapter;
-    chapter = '1';
+    chapter = 1;
   }
-  const ch = chapter ? parseInt(chapter, 10) : 1;
-  if (ch < 1 || ch > book.chapters.length) return null;
+  if (chapter === null) {
+    return { kind: 'chapter', book: meta, chapter: 1, corrected,
+             index: indexOf(id, 1, 1) };
+  }
+  if (chapter < 1 || chapter > meta.chapters.length) return null;
 
-  if (!verse) {
-    return { kind: 'chapter', book, chapter: ch, index: indexOf(id, ch, 1) };
+  if (verse === null) {
+    return { kind: 'chapter', book: meta, chapter, corrected,
+             index: indexOf(id, chapter, 1) };
   }
-  const v = parseInt(verse, 10);
-  if (v < 1 || v > book.chapters[ch - 1]) return null;
-  const start = indexOf(id, ch, v);
+  const cap = meta.chapters[chapter - 1];
+  if (verse < 1 || verse > cap) return null;
+  const start = indexOf(id, chapter, verse);
   const end = endVerse
-    ? indexOf(id, ch, Math.min(parseInt(endVerse, 10), book.chapters[ch - 1]))
+    ? indexOf(id, chapter, Math.min(Math.max(endVerse, verse), cap))
     : start;
-  return { kind: 'verse', book, chapter: ch, verse: v, index: start, end };
+  return { kind: 'verse', book: meta, chapter, verse, corrected, index: start, end };
+}
+
+
+/**
+ * Closest book name to a misspelling, or null when it is too far off or too
+ * close to call.
+ *
+ * Deliberately cautious. Book names are short and there are sixty-six of
+ * them, so a loose threshold would route ordinary searches into the reader -
+ * nobody typing "hope" wants Hosea. A candidate has to be clearly nearer than
+ * every rival before it is accepted.
+ */
+function nearestBook(normalised) {
+  if (!normalised || normalised.length < 4) return null;
+  const limit = normalised.length <= 6 ? 1 : 2;
+  let best = null;
+  let bestD = limit + 1;
+  let runnerUp = limit + 1;
+
+  for (const [alias, id] of ALIASES) {
+    if (alias.length < 3) continue;
+    const d = distance(normalised, alias, limit);
+    if (d > limit) continue;
+    if (d < bestD) {
+      if (!best || best.id !== id) runnerUp = bestD;
+      bestD = d;
+      best = { id, alias };
+    } else if (d < runnerUp && (!best || best.id !== id)) {
+      runnerUp = d;
+    }
+  }
+  if (!best || bestD > limit) return null;
+  if (runnerUp <= bestD) return null;      // ambiguous, do not guess
+  const meta = bookById(best.id);
+  return meta ? { id: best.id, name: meta.name } : null;
 }
